@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 26 23:29:37 2021
+
+@author: Voovo
+"""
+# -*- coding: utf-8 -*-
 import numpy as np
 import cv2
 import json
@@ -17,8 +23,6 @@ def preprocessing(pathVid):
         # array of frames in video
         frames = []
 
-        diff_img = cv2.imread(pathVid[:-4]+".jpg",cv2.IMREAD_GRAYSCALE)
-
         vidcap = cv2.VideoCapture(pathVid)
         success,frame = vidcap.read()
 
@@ -32,31 +36,28 @@ def preprocessing(pathVid):
         cnt = 0
         frame_nr = 0
 
-        # array of diff-images of consecutive frames
-        diffs = []
-
-        # for each frame
-        for i in range(1,len(frames)):
-            # calculate diff of frame and its previous frame
-            diffs.append(cv2.absdiff(frames[i-1],frames[i]))
+        old_indx = (0,0)
 
         # get coords of brightest pixel in each frame
-        for img in diffs:
+        for img in frames:
             img_pad = np.pad(img,16)
-            img_pad_orig = np.pad(frames[frame_nr],16)
             # max pixel and coord
             min_val,max_val,min_indx,max_indx=cv2.minMaxLoc(img_pad)
 
-            # treshold for minimal brightness
-            if max_val > 50:
-                coords.append(max_indx)
-                pathSquare = pathVid[:-4]+str(cnt)+".jpg"
-                cv2.imwrite(pathSquare, img_pad_orig[max_indx[1]-16:max_indx[1]+16,max_indx[0]-16:max_indx[0]+16])
-                img_crop = img_pad_orig[max_indx[1]-16:max_indx[1]+16,max_indx[0]-16:max_indx[0]+16]
-                img_stack.append(img_crop)
-                meta_stack.append(np.array([frame_nr, max_indx[1], max_indx[0], max_val]))
-                cnt = cnt+1
+            # check if brightest Pixel has moved
+            if (frame_nr == 0 or (abs(np.array(old_indx)-np.array(max_indx))>0).any()) and (abs(np.array(old_indx)-np.array(max_indx))<30).all():
+
+                # treshold for minimal brightness
+                if max_val > 50:
+                    coords.append(max_indx)
+                    pathSquare = pathVid[:-4]+str(cnt)+".jpg"
+                    cv2.imwrite(pathSquare, img_pad[max_indx[1]-16:max_indx[1]+16,max_indx[0]-16:max_indx[0]+16])
+                    img_crop = img_pad[max_indx[1]-16:max_indx[1]+16,max_indx[0]-16:max_indx[0]+16]
+                    img_stack.append(img_crop)
+                    meta_stack.append(np.array([frame_nr, max_indx[1], max_indx[0], max_val]))
+                    cnt = cnt+1
             frame_nr = frame_nr+1
+            old_indx = max_indx
 
         #lineImg = cv2.imread(pathImg,cv2.IMREAD_COLOR)
 
