@@ -17,8 +17,6 @@ def preprocessing(pathVid):
         # array of frames in video
         frames = []
 
-        diff_img = cv2.imread(pathVid[:-4]+".jpg",cv2.IMREAD_GRAYSCALE)
-
         vidcap = cv2.VideoCapture(pathVid)
         success,frame = vidcap.read()
 
