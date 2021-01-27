@@ -25,7 +25,8 @@ def preprocessing(pathVid):
             frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
             success,frame = vidcap.read()
 
-        coords = []
+        coords_diff = []
+        coords_orig = []
 
         cnt = 0
         frame_nr = 0
@@ -42,17 +43,22 @@ def preprocessing(pathVid):
         for img in diffs:
             img_pad = np.pad(img,16)
             img_pad_orig = np.pad(frames[frame_nr],16)
-            # max pixel and coord
+
+            # max pixel and coord in diff
             min_val,max_val,min_indx,max_indx=cv2.minMaxLoc(img_pad)
 
+            # max pixel and coord in orig
+            min_val_orig,max_val_orig,min_indx_orig,max_indx_orig=cv2.minMaxLoc(img_pad_orig)
+
             # treshold for minimal brightness
-            if max_val > 50:
-                coords.append(max_indx)
+            if max_val > 50 and max_val_orig > 50:
+                coords_diff.append(max_indx)
+                coords_orig.append(max_indx_orig)
                 pathSquare = pathVid[:-4]+str(cnt)+".jpg"
-                cv2.imwrite(pathSquare, img_pad_orig[max_indx[1]-16:max_indx[1]+16,max_indx[0]-16:max_indx[0]+16])
-                img_crop = img_pad_orig[max_indx[1]-16:max_indx[1]+16,max_indx[0]-16:max_indx[0]+16]
+                cv2.imwrite(pathSquare, img_pad_orig[max_indx_orig[1]-16:max_indx_orig[1]+16,max_indx_orig[0]-16:max_indx_orig[0]+16])
+                img_crop = img_pad_orig[max_indx_orig[1]-16:max_indx_orig[1]+16,max_indx_orig[0]-16:max_indx_orig[0]+16]
                 img_stack.append(img_crop)
-                meta_stack.append(np.array([frame_nr, max_indx[1], max_indx[0], max_val]))
+                meta_stack.append(np.array([frame_nr, max_indx_orig[1], max_indx_orig[0], max_val_orig]))
                 cnt = cnt+1
             frame_nr = frame_nr+1
 
