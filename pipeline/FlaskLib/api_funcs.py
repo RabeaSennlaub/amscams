@@ -1,6 +1,6 @@
 from lib.PipeUtil import load_json_file, save_json_file, cfe, bound_cnt
 from lib.PipeAutoCal import get_image_stars, get_catalog_stars , pair_stars, eval_cnt, update_center_radec, fn_dir
-from lib.PipeDetect import fireball, apply_frame_deletes, find_object, analyze_object, make_base_meteor_json, fireball_fill_frame_data, calib_image, apply_calib, grid_intensity_center
+from lib.PipeDetect import fireball, apply_frame_deletes, find_object, analyze_object, make_base_meteor_json, fireball_fill_frame_data, calib_image, apply_calib, grid_intensity_center, make_roi_video_mfd
 from lib.PipeVideo import ffprobe, load_frames_fast
 
 import os
@@ -304,6 +304,8 @@ def show_cat_stars (video_file, hd_stack_file, points):
       if "hd_stack" in mj:
          hd_img = cv2.imread(mj['hd_stack'], 0)
          print("HD IMG:", hd_img.shape)
+      if "short_bright_stars" in cp:
+         del (cp['short_bright_stars'])
    else:
       cal_r = video_file.replace("-half-stack.png", "")
       cal_root = "/mnt/ams2" + cal_r 
@@ -390,10 +392,16 @@ def show_cat_stars (video_file, hd_stack_file, points):
 
 
 def update_meteor_points(sd_video_file,frames):
+   json_conf = load_json_file("../conf/as6.json")
    json_file = "/mnt/ams2/" + sd_video_file.replace(".mp4", ".json")
+   full_vid = "/mnt/ams2/" + sd_video_file
+   print("FV:", full_vid)
+   print("JS:", json_file)
+
    rjson_file = json_file.replace(".json", "-reduced.json")
  
    mj = load_json_file(json_file)
+   print("MJ LOADED:", mj)
    if "user_mods" in  mj:
       user_mods = mj['user_mods']
    else:
@@ -411,11 +419,12 @@ def update_meteor_points(sd_video_file,frames):
    resp = {
       "msg": "frames updated." 
    }
-   cmd = "./Process.py roi_mfd /mnt/ams2/" + sd_video_file + " >/mnt/ams2/tmp/api.points 2>&1"
-   print("COMMAND:", cmd)
-   os.system(cmd)
+   #cmd = "./Process.py roi_mfd /mnt/ams2/" + sd_video_file + " >/mnt/ams2/tmp/api.points 2>&1"
+   #print("COMMAND:", cmd)
+   #os.system(cmd)
+   make_roi_video_mfd("/mnt/ams2/" + sd_video_file, json_conf)
 
-   cmd = "./Learn.py add " + json_file + " >/mnt/ams2/tmp/api.points 2>&1"
+   cmd = "./Learn.py add " + json_file + " >/mnt/ams2/tmp/api.points 2>&1 &"
    print("COMMAND:", cmd)
    os.system(cmd)
 

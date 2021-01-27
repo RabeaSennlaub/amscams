@@ -30,6 +30,7 @@ def update_code(json_conf):
    if install_version != latest_version:
       print("Code not up to date. We should sync.")
       os.system("git pull")
+      os.system("cd /home/ams/amscams/install; ./update-flask-assets.sh ")
 
 
 def run_jobs(json_conf):
@@ -41,6 +42,19 @@ def run_jobs(json_conf):
    yest = (datetime.now() - dt.timedelta(days = 1)).strftime("%Y_%m_%d")
    sun, az, alt = day_or_night(datetime.now(), json_conf, 1)
    print(sun, az, alt)
+ 
+   amsid = json_conf['site']['ams_id']
+   # check to make sure the cloud drive is setup and cal sync'd
+   cloud_conf_dir = "/mnt/archive.allsky.tv/" + amsid + "/CAL/"
+   cloud_conf_file = cloud_conf_dir + "as6.json"
+   if cfe(cloud_conf_dir,1) == 0:
+      os.makedirs(cloud_conf_dir)
+   if cfe(cloud_conf_file) == 0:
+      os.system("cp ../conf/as6.json " + cloud_conf_file)
+   else:
+      print("Cloud conf file is good.")
+   #exit() 
+
    cmds = []
    cmds.append(('all', "Clean disk / Purge old files", "cd /home/ams/amscams/pythonv2; ./doDay.py cd"))
    cmds.append(('day', "Make Meteor Index", "cd /home/ams/amscams/pipeline; ./Process.py mmi_all"))
@@ -69,7 +83,7 @@ def run_jobs(json_conf):
    cmds.append(('day', "Reduce / Confirm Meteors", "cd /home/ams/amscams/pipeline; ./Process.py confirm " + yest))
    cmds.append(('day', "Meteor Prep", "cd /home/ams/amscams/pipeline; ./Process.py meteor_prep " + today))
    cmds.append(('day', "Meteor Prep", "cd /home/ams/amscams/pipeline; ./Process.py meteor_prep " + yest))
-   cmds.append(('day', "Cal Wiz", "cd /home/ams/amscams/pipeline; ./Process.py cal_wiz"))
+   #cmds.append(('day', "Cal Wiz", "cd /home/ams/amscams/pipeline; ./Process.py cal_wiz"))
    cmds.append(('day', "Meteor Prep", "cd /home/ams/amscams/pipeline; ./Process.py meteor_prep " + today + " 2" ))
    cmds.append(('day', "Meteor Prep", "cd /home/ams/amscams/pipeline; ./Process.py meteor_prep " + yest + " 2"))
 

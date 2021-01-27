@@ -722,6 +722,12 @@ def reject_mask_detects(date, json_conf):
    for mf in sorted(jsfiles,reverse=True):
       if "reduced" not in mf and "stars" not in mf and "man" not in mf and "star" not in mf and "import" not in mf and "archive" not in mf:
          mj = load_json_file(mf) 
+         if "multi_station_event" in mj:
+            print("SKIP MULTI-STATION CONFIRMED.")
+            continue
+         if "best_meteor" in mj:
+            print("SKIP BEST METEOR CONFIRMED.")
+            continue
          if "confirmed" in mj:
             if len(mj['confirmed_meteors']) > 0:
                print("SKIP CONFIRMED.")
@@ -741,9 +747,6 @@ def reject_mask_detects(date, json_conf):
                fn, dir = fn_dir(mf)
                root_file = fn.replace(".json", "")
                del_data[root_file] = 1
-         if "multi_station_event" in mj:
-            print("SKIP MULTI-STATION CONFIRMED.")
-            continue
 
          print("\n\n\n\n RUNNING:", mf)
          tfs += 1
@@ -1798,7 +1801,7 @@ def mfd_to_cropbox(mfd):
    return(crop_box)
 
 def make_roi_video_mfd(video_file, json_conf):
-   roi_size = 50
+   roi_size = 25
    vid_fn, vid_dir = fn_dir(video_file)
    vid_base = vid_fn.replace(".mp4", "")
    mjf = video_file.replace(".mp4", ".json")
@@ -1808,18 +1811,39 @@ def make_roi_video_mfd(video_file, json_conf):
    year = vid_fn[0:4]
    mon = vid_fn[5:7]
    cache_dir = "/mnt/ams2/CACHE/" + year + "/" + mon + "/" + vid_base + "/"
+   cache_dir_frames = "/mnt/ams2/CACHE/" + year + "/" + mon + "/" + vid_base + "_frms/"
    prefix = cache_dir + vid_base + "-frm"
    if cfe(cache_dir, 1) == 0:
       print("CACHE DIR:", cache_dir)
       os.makedirs(cache_dir)
+   if cfe(cache_dir_frames, 1) == 0:
+      print("CACHE DIR:", cache_dir_frames)
+      os.makedirs(cache_dir_frames)
 
-   hd_frames,hd_color_frames,subframes,sum_vals,max_vals,pos_vals = load_frames_fast(video_file, json_conf, 0, 0, 1, 1,[])
+   cache_frames = glob.glob(cache_dir_frames + "*.jpg")
+   print(cache_dir_frames)
+   print(cache_frames)
+   if len(cache_frames) == 0:
+      hd_frames,hd_color_frames,subframes,sum_vals,max_vals,pos_vals = load_frames_fast(video_file, json_conf, 0, 0, 1, 1,[])
+      i = 0
+      for ff in hd_color_frames:
+         frm_file = cache_dir_frames + vid_base + "-{:04d}".format(int(i)) + ".jpg"
+         print(frm_file)
+         cv2.imwrite(frm_file, ff)
+         i += 1
+   else:
+      hd_color_frames = []
+      for cf in sorted(cache_frames):
+         cfi = cv2.imread(cf)
+         hd_color_frames.append(cfi)
 
    updated_frame_data = []
+   print("MJF:", mjf)
    if cfe(mjf) == 1:
       mj = load_json_file(mjf)
    if cfe(mjrf) == 1:
       mjr = load_json_file(mjrf)
+
    if "user_mods" in mj:
       if "frames" in mj['user_mods']:
          ufd = mj['user_mods']['frames']
@@ -1830,60 +1854,91 @@ def make_roi_video_mfd(video_file, json_conf):
       mj['user_mods'] = {}
    used = {}
    vh,vw = hd_color_frames[0].shape[:2]
+   print(mjr['meteor_frame_data'])
    if "meteor_frame_data" in mjr:
+      mjr['meteor_frame_data'] = sorted(mjr['meteor_frame_data'], key=lambda x: (x[1]), reverse=False)
       for row in mjr['meteor_frame_data']:
          (dt, fn, x, y, w, h, oint, ra, dec, az, el) = row
          print("ROW:", row)
          frame = hd_color_frames[fn]
+         of = cv2.resize(frame, (1920,1080))
          sfn = str(fn)
          if sfn in ufd:
             temp_x,temp_y = ufd[sfn]
             if temp_x > 0 and temp_y > 0:
                x = temp_x  
                y = temp_y  
+               #cv2.circle(of,(x,y), 5, (0,255,255), 1)
                tx, ty, ra ,dec , az, el = XYtoRADec(x,y,video_file,mjr['cal_params'],json_conf)
                print("USING UPDATED POINT", fn, x,y)
          if fn not in used:
-            updated_frame_data.append((dt, fn, x, y, w, h, oint, ra, dec, az, el))
+            use_roi_p = 0
+            updated_frame_data.append((dt, int(fn), x, y, w, h, oint, ra, dec, az, el))
             #cx = x + int(w/2)
             #cy = y + int(h/2)
             rx1,ry1,rx2,ry2 = bound_cnt(x, y,1920,1080, roi_size)
-            of = cv2.resize(frame, (1920,1080))
             if rx2 - rx1 != roi_size * 2:
-               print("PROBLEM AT THE X EDGE!")
-               exit()
+                roi_p = np.zeros((roi_size*2,roi_size*2,3),dtype=np.uint8)
+                if rx2 > vw/2:
+                   # we are on the right side. 
+                   px1 = 0
+                   px2 =  (rx2-rx1)
+                   print("ROIP:", roi_p.shape)
+                   xsz = rx2 - rx1
+                   ysz = ry2 - ry1
+                   #rx2 = rx1 + xsz
+                   print("ROIP2:", px1, px2, ry1, ry2, rx1,rx2)
+                   print("ROIP3:", xsz,ysz)
+                   roi_p[0:50,px1:px2] = of[ry1:ry2,rx1:rx2]
+
+                   #cv2.imshow("ROI", roi_p)
+                   #cv2.waitKey(0)
+                   roi_img = roi_p
+                   use_roi_p = 1
+
             if ry2 - ry1 != roi_size * 2:
                print("PROBLEM AT THE Y EDGE! height is only", ry2-ry1 )
                # make new canvas
                roi_p = np.zeros((roi_size*2,roi_size*2,3),dtype=np.uint8)
                #put image in canvas dependent on top or bottom
                if ry1 < vh / 2:
+                  print("TOP:", ry1, ry2, vh/2)
                   # we are at the top
                   # add difference insize to the roi_p_y1 var
-                  py1 = 100 - (ry2-ry1)
-                  py2 = 100 
+                  py1 = 50 - (ry2-ry1)
+                  py2 = 50 
+                  #offset = 50 - (ry2-ry1)
                   roi_p[py1:py2,0:100] = of[ry1:ry2,rx1:rx2]
                   roi_img = roi_p
                   print("TOP NEW CANVAS PASTE Y", py1,py2)
                else:
+                  print("BOTTOM:", ry1, ry2, vh/2)
                   # we are at the bottom
                   py1 = 0 
                   py2 = (ry2-ry1)
-                  print("BOTTOM NEW CANVAS PASTE Y", py1,py2)
-                  exit()
+                  print("BOTTOM NEW CANVAS PASTE Y", py1,py2,ry1,ry2)
+
+                  roi_p[py1:py2,0:100] = of[ry1:ry2,rx1:rx2]
+                  roi_img = roi_p
+
+                  #exit()
 
             else:
-               roi_img = of[ry1:ry2,rx1:rx2]
+               if use_roi_p == 0:
+                  roi_img = of[ry1:ry2,rx1:rx2]
+               else:
+                  roi_img = roi_p
 
 
             #cv2.rectangle(of, (rx1, ry1), (rx2, ry2), (255,255,255), 1, cv2.LINE_AA)
+            #cv2.circle(of,(x,y), 10, (255,255,255), 1)
             #cv2.imshow('pepe', of)
             #cv2.waitKey(0)
 
             ffn = "{:04d}".format(int(fn))
             outfile = prefix + ffn + ".jpg"
             cv2.imwrite(outfile, roi_img)
-            print("WROTE:", outfile, x,y)
+            print("WROTE:", ffn, outfile, x,y)
          else:
             print("ALREADY USED:", fn)
 
@@ -1941,7 +1996,7 @@ def make_roi_video(video_file,bm, frames, json_conf):
    prefix = cache_dir + vid_base + "-frm"
    if cfe(cache_dir, 1) == 0:
       os.makedirs(cache_dir)
-   roi_size = 50
+   roi_size = 25
    roi_size2 = roi_size * 2
    roi_frames = []
 
@@ -2133,6 +2188,7 @@ def fireball(video_file, json_conf, nomask=0):
    hdm_y_720 = 720 / fh
    print("BP1")
    best_meteor, hd_frames, hd_color_frames, median_frame, mask_img,cp = fireball_phase1(hd_frames, hd_color_frames, subframes,sum_vals,max_vals,pos_vals, video_file, json_conf, jsf, jdata, best_meteor, nomask)
+   #print("BEST:", best_meteor['ofns'])
    print("AP1")
    gap_test_res = None
    jdata['cp'] = cp
@@ -2159,6 +2215,8 @@ def fireball(video_file, json_conf, nomask=0):
       print("No meteor detected.", jsf)
       return()
    best_meteor, frame_data = fireball_fill_frame_data(video_file,best_meteor, hd_color_frames)
+   print("BEST:", best_meteor['ofns'])
+   #exit()
 
 
    #tracking_file = video_file.replace(".mp4", "-tracking.mp4")
@@ -2605,7 +2663,7 @@ def fireball_fill_frame_data(video_file, bm, frames, tracking_updates = None):
    ccys = []
    dts= []
    # Loop over new frame data and add to BM arrays
-   for fn in frame_data:
+   for fn in sorted(frame_data.keys()):
       if tracking_updates is not None:
          if fn in tracking_updates:
             mod_x, mod_y = tracking_updates[fn]
@@ -2859,7 +2917,15 @@ def fireball_phase1(hd_frames, hd_color_frames, subframes,sum_vals,max_vals,pos_
    print("FRAMES:", len(hd_frames), len(hd_color_frames))
    #PHASE 1
    (f_datetime, cam, f_date_str,fy,fmin,fd, fh, fm, fs) = convert_filename_to_date_cam(video_file)
-
+   mask_imgs, sd_mask_imgs = load_mask_imgs(json_conf)
+   print("CAM:", cam)
+   if cam in mask_imgs:
+      mask_img = mask_imgs[cam]
+   else:
+      mask_img = None
+   if mask_img is None:
+      print("no mask")
+      exit()
    objects = {}
    # load up the frames
    if len(hd_frames) == 0:
@@ -2886,13 +2952,6 @@ def fireball_phase1(hd_frames, hd_color_frames, subframes,sum_vals,max_vals,pos_
    else:
       HD = 0
    # load mask file if it exists
-   mask_file = MASK_DIR + cam + "_mask.png"
-   if cfe(mask_file) == 1 and nomask == 0:
-      mask_img = cv2.imread(mask_file,0)
-      mask_img = cv2.resize(mask_img, (fw,fh))
-
-   else:
-      mask_img = None
 
    do_cal = 0
    for key in jdata:
@@ -2946,11 +3005,24 @@ def fireball_phase1(hd_frames, hd_color_frames, subframes,sum_vals,max_vals,pos_
    if hd_frames[0].shape[0] != fb_mask.shape[0] and hd_frames[0].shape[1] != fb_mask.shape[1] :
       fb_mask = cv2.resize(fb_mask, (hd_frames[0].shape[1], hd_frames[0].shape[0]))
    past_points = []
+   if mask_img is None:
+      print("NO MASK.")
+      exit()
    for frame in hd_frames:
       color_frame = hd_color_frames[frame_num]
       #if best_meteor is not None:
       #   continue
       frame = mask_stars(frame, cp)
+      if mask_img is not None:
+         if mask_img.shape[0] != frame.shape[0]:
+            mask_img = cv2.resize(mask_img, (frame.shape[1], frame.shape[0]))
+         if len(frame.shape) == 3 and len(mask_img.shape) == 2:
+            mask_img = cv2.cvtColor(mask_img, cv2.COLOR_GRAY2BGR)
+         
+         frame = cv2.subtract(frame, mask_img)
+         #cv2.imshow('pepe2', frame)
+         #cv2.waitKey(0)
+
 
       #frame = mask_points(frame, past_points )
       #cv2.imshow("FR", frame)
@@ -6377,3 +6449,17 @@ def find_contours_in_frame(frame, thresh=25 ):
 
    return(contours, recs)
 
+def load_mask_imgs(json_conf):
+   mask_files = glob.glob("/mnt/ams2/meteor_archive/" + json_conf['site']['ams_id'] + "/CAL/MASKS/*mask*.png" )
+   mask_imgs = {}
+   sd_mask_imgs = {}
+   for mf in mask_files:
+      mi = cv2.imread(mf, 0)
+      omh, omw = mi.shape[:2]
+      fn,dir = fn_dir(mf)
+      fn = fn.replace("_mask.png", "")
+      mi = cv2.resize(mi, (1920, 1080))
+      sd = cv2.resize(mi, (omw, omh))
+      mask_imgs[fn] = mi
+      sd_mask_imgs[fn] = sd
+   return(mask_imgs, sd_mask_imgs)
