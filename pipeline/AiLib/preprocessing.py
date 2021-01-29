@@ -80,13 +80,13 @@ def preprocessing(pathVid):
 vid_dict = dict([])
 
 
-vidFolder = Path(r'D:\Voovo\Documents\Uni\Masterarbeit\Data_Sirko\detections_ams35\matched\Zwischenstaende\\')
+vidFolder = Path(r'D:\Voovo\Documents\Uni\Masterarbeit\Data_Sirko\detections_ams35\matched\trash_test\\')
 
 prog = 0
 for x in vidFolder.iterdir():
-    if str(x).endswith("_crop.mp4"):
+    if str(x).endswith("crop.mp4"):
         preprocessing(str(x))
         print(prog)
         prog +=1
 
-#dd.io.save(r'D:\Voovo\Documents\Uni\Masterarbeit\Data_Sirko\detections_ams35\matched\meteor\meteor_hd.h5', vid_dict)
+#dd.io.save(r'D:\Voovo\Documents\Uni\Masterarbeit\Data_Sirko\detections_ams35\matched\DB\trash_hd_2010.h5', vid_dict)
