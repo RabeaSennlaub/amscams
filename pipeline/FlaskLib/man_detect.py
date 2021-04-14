@@ -20,6 +20,8 @@ def man_detect(min_file, data):
    lf = data['lf']
    mf = min_file 
    out = "<P>Select the first and last image that contains the meteor.</p>"
+   if step == "2":
+      out = ""
    date = min_file[0:10]
    min_dir = "/mnt/ams2/SD/proc2/" + date + "/" 
    min_file = min_dir + min_file
@@ -83,19 +85,22 @@ def man_detect(min_file, data):
          os.system(cmd)
          vhdtrim_file = hd_trim.replace("/mnt/ams2", "")
          out += "<a href=" + vhdtrim_file + ">HD Trim File</a><BR>"
+      else:
+         hd_trim = None
 
       mj, mjr = make_base_meteor_json(trim_file,hd_trim, None, None) 
       out += str(mj)
       
       os.system("cp " + trim_file + " " + mj['sd_video_file'])
-      os.system("cp " + hd_trim + " " + mj['hd_trim'])
+      if hd_trim is not None:
+         os.system("cp " + hd_trim + " " + mj['hd_trim'])
       mjf = mj['sd_video_file'].replace(".mp4", ".json")
       save_json_file(mjf, mj)
       # make the stacks
       os.system("./Process.py restack_meteor " + mj['sd_video_file'])
       vidfn = mj['sd_video_file'].split("/")[-1]
       date = vidfn[0:10]
-      murl = "/meteors/" + amsid + "/" + date + "/" + vidfn + "/" 
+      murl = "/meteor/" + amsid + "/" + date + "/" + vidfn + "/" 
       out += "<a href=" + murl + ">goto meteor</a>"
 
    out += javascript(mf)

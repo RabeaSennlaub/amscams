@@ -1648,6 +1648,8 @@ def apply_calib(obj , frames=None , user_station = None):
          hd_frames,hd_color_frames,hd_subframes,sum_vals,max_vals,pos_vals = load_frames_fast(obj['trim_clip'], json_conf, 5, 0, [], 0,[])
          print("SD FRAMES:", len(hd_frames))
       frames = hd_frames
+   if len(frames) == 0:
+      return(None, None)
 
    frame = frames[0]
    frame = cv2.resize(frame, (1920,1080))
@@ -9306,12 +9308,18 @@ def obj_to_arc_meteor(meteor_file):
       meteor_frame_time_str = meteor_frame_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
       frame['dt'] = meteor_frame_time_str 
       print(frame)
+      try:
+         new_x, new_y, ra ,dec , az, el = XYtoRADec(frame['x'],frame['y'],mj['hd_trim'],cal_params,json_conf)
+         frame['az'] = az 
+         frame['el'] = el
+         frame['ra'] = ra 
+         frame['dec'] = dec
+      except:
+         frame['az'] = 0
+         frame['el'] = 0
+         frame['ra'] = 0
+         frame['dec'] = 0
 
-      new_x, new_y, ra ,dec , az, el = XYtoRADec(frame['x'],frame['y'],mj['hd_trim'],cal_params,json_conf)
-      frame['az'] = az 
-      frame['el'] = el
-      frame['ra'] = ra 
-      frame['dec'] = dec
 
 
       frames.append(frame)

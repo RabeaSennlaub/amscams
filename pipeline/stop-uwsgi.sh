@@ -1,4 +1,4 @@
 uwsgi --stop /tmp/uwsgi.pid
-
-sudo kill -9 $(ps aux | grep 'uwsgi' | awk '{print $2}')
+if pgrep uwsgi; then pkill uwsgi; fi
+# sudo kill -9 $(ps aux | grep 'uwsgi' | awk '{print $2}')
 

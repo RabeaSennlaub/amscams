@@ -2,13 +2,14 @@ import base64
 import os
 from flask import Flask, request, Response, make_response
 from FlaskLib.Learning import learning_meteors_dataset
+from FlaskLib.motion_detects import motion_detects
 from FlaskLib.FlaskUtils import get_template
 from FlaskLib.api_funcs import update_meteor_points, show_cat_stars, delete_meteor, restore_meteor, delete_meteors, reduce_meteor, delete_frame, crop_video
 from FlaskLib.calib_funcs import calib_main, cal_file, show_masks, del_calfile, lens_model, edit_mask, edit_mask_points
 from lib.PipeUtil import cfe, load_json_file, save_json_file
 from lib.PipePwdProtect import login_page, check_pwd_ajax
 from lib.PipeAutoCal import fn_dir
-from FlaskLib.meteor_detail_funcs import detail_page 
+from FlaskLib.meteor_detail_funcs import detail_page , pick_points, pick_points_day 
 from FlaskLib.config_funcs import config_vars 
 from FlaskLib.meteors_main import meteors_main , meteors_by_day, trash_page
 from FlaskLib.super_stacks import stacks_main, stacks_day_hours, stacks_hour
@@ -17,25 +18,65 @@ from FlaskLib.live import live_view
 from FlaskLib.TL import tl_menu 
 from FlaskLib.man_reduce import meteor_man_reduce , save_man_reduce
 from FlaskLib.man_detect import man_detect 
+from FlaskLib.meteors_main_redis import meteors_main_redis
 #from FlaskLib.Maps import make_map 
-
+from flask import redirect, url_for, abort
 import json
 
-
+from flask_httpauth import HTTPBasicAuth
 
 app = Flask(__name__, static_url_path='/static')
+auth = HTTPBasicAuth()
 
 #, ssl_context=('cert.pem', 'key.pem'))
 
 # Main controller for AllSkyCams UI application.
 
+json_conf = load_json_file("../conf/as6.json")
+if "dynamodb" in json_conf:
+   dynDB = 1
+   from flask_dynamo import Dynamo
+   app.config['DYNAMO_TABLES'] = [
+   {
+      'TableName': 'station',
+      'KeySchema': [dict(AttributeName='station_id', KeyType='HASH')],
+      'AttributeDefinitions' : [dict(AttributeName='station_id', AttributeType='S')],
+      'BillingMode': 'PAY_PER_REQUEST'
+   },
+   {
+      'TableName': 'meteor_obs',
+      'KeySchema': [dict(AttributeName='station_id', KeyType='HASH'),dict(AttributeName='sd_video_file', KeyType='RANGE')],
+      'AttributeDefinitions': [dict(AttributeName='station_id', AttributeType='S'), dict(AttributeName='sd_video_file', AttributeType='S')],
+      'BillingMode': 'PAY_PER_REQUEST'
+   },
+   {
+      'TableName': 'x_meteor_event',
+      'KeySchema': [dict(AttributeName='event_day', KeyType='HASH'),dict(AttributeName='event_id', KeyType='RANGE')],
+      'AttributeDefinitions' : [dict(AttributeName='event_day', AttributeType='S'), dict(AttributeName='event_id', AttributeType='S')],
+      'BillingMode': 'PAY_PER_REQUEST'
+   }
+   ]
+   dynamo = Dynamo(app)
+
+
+
+@auth.verify_password
+def verify_password(username,password):
+   json_conf = load_json_file("../conf/as6.json")
+   if username == json_conf['site']['ams_id'] and password == json_conf['site']['pwd']:
+      return(username)
+
+
+
 @app.route('/TL/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def tlm(amsid):
    out = tl_menu(amsid)
    return(out)
 
 
 @app.route('/maps/', methods=['GET', 'POST'])
+@auth.login_required
 def map_runner():
 
    points = request.args.get('points')
@@ -48,16 +89,114 @@ def map_runner():
    response.headers['Content-Disposition'] = 'filename=%d.png' % 0
    return response
 
+
+@app.route('/obs_review/<day>/', methods=['GET', 'POST'])
+@auth.login_required
+def obs_rev_control(day):
+   from FlaskLib.Events import obs_review 
+   resp = obs_review(day, json_conf)
+   return(resp)
+
+
+@app.route('/save_points/', methods=['GET', 'POST'])
+@auth.login_required
+def cntl_save_points():
+   from FlaskLib.PointPicker import save_points
+
+   jdata = request.get_json()
+   data = jdata['data']
+   file = jdata['file']
+   station = jdata['station']
+   print("FILE:", file)
+   print("DATA:", data)
+   #data = request.args.get('data')
+   #file = request.args.get('file')
+
+
+   resp = save_points(file,station,data,json_conf)
+   return(resp)
+@app.route('/pick_points/<meteor_id>/', methods=['GET', 'POST'])
+@auth.login_required
+def cntl_pick_points(meteor_id):
+   el = meteor_id.split("_")
+   if len(el) == 3:
+      resp = pick_points_day(meteor_id,json_conf)
+   else: 
+      resp = pick_points(meteor_id,json_conf)
+   return(resp)
+
+
+@app.route('/point_picker/<date>/', methods=['GET', 'POST'])
+@auth.login_required
+def cntl_point_picker (date):
+   from FlaskLib.PointPicker import point_picker 
+   station = request.args.get('station')
+   resp = point_picker(date,station, json_conf)
+   return(resp)
+
+
+@app.route('/kml_failed/<event_id>/', methods=['GET', 'POST'])
+@auth.login_required
+def event_kml_failed(event_id):
+   from FlaskLib.EventViewer import EventViewer 
+   EV = EventViewer(event_id=event_id)
+   resp = EV.EVO.make_failed_kml()
+   return Response(resp, mimetype='application/vnd.google-earth.kml+xml')
+
+
+@app.route('/event_detail/<event_id>/', methods=['GET', 'POST'])
+@auth.login_required
+def event_detail_control(event_id):
+   from FlaskLib.EventViewer import EventViewer 
+   EV = EventViewer(event_id=event_id)
+   resp = EV.EVO.render_template(template_file="FlaskTemplates/EventViewer.html")
+   return(resp)
+
+
+@app.route('/events/', methods=['GET', 'POST'])
+@auth.login_required
+def events_main_control():
+   #from FlaskLib.Events import all_events 
+   from Classes.Events import Events 
+   fv = {}
+   fv['solve_status'] = request.args.get('status')
+   fv['start_date'] = request.args.get('start_date')
+   fv['end_date'] = request.args.get('end_date')
+   fv['stations'] = request.args.get('stations')
+   EVS = Events(fv)
+    
+   EVS.load_events()
+   resp = EVS.render_events_list()
+   return(resp)
+
+@app.route('/events/<date>/', methods=['GET', 'POST'])
+@auth.login_required
+def events_control(date):
+   from FlaskLib.Events import list_events_for_day
+
+   resp = list_events_for_day(date)
+   return(resp)
+
+
 @app.route('/', methods=['GET', 'POST'])
+@auth.login_required
+@auth.login_required
 def main_menu():
+   json_conf = load_json_file("../conf/as6.json")
+   ams_id = json_conf['site']['ams_id']
+   redir = "/stacks/" + ams_id + "/"
+   return redirect(redir)
+
+
    out = login_page()
    header = get_template("FlaskTemplates/header-login.html")
-   footer = get_template("FlaskTemplates/footer.html")
+   footer = get_template("FlaskTemplates/footer-remote.html")
    out = out.replace("{HEADER}", header)
    out = out.replace("{FOOTER}", footer)
    return out
 
 @app.route('/api/check_login', methods=['GET', 'POST'])
+@auth.login_required
 def chk_login():
    user = request.args.get('user')
    passwd = request.args.get('pwd')
@@ -66,12 +205,14 @@ def chk_login():
 
 
 @app.route('/api/delete_frame/<meteor_file>/', methods=['GET', 'POST'])
+@auth.login_required
 def del_frame(meteor_file):
    fn = request.args.get('fn')
    out = delete_frame(meteor_file,fn)
    return out
 
 @app.route('/save_man_reduce/', methods=['GET', 'POST'])
+@auth.login_required
 def save_man_red():
    data = {}
    data['frame_data'] = request.form.get('frame_data')
@@ -87,6 +228,7 @@ def save_man_red():
    return(out)   
 
 @app.route('/meteor_man_reduce/', methods=['GET', 'POST'])
+@auth.login_required
 def meteor_man_red():
   
    meteor_file = request.args.get('file')
@@ -112,6 +254,7 @@ def meteor_man_red():
    return out
 
 @app.route('/man_detect/<min_file>/', methods=['GET', 'POST'])
+@auth.login_required
 def manual_detect(min_file):
   
    step = request.args.get('step')
@@ -125,11 +268,13 @@ def manual_detect(min_file):
    return(out)
 
 @app.route('/api/reduce_meteor/<meteor_file>/', methods=['GET', 'POST'])
+@auth.login_required
 def red_meteor(meteor_file):
    out = reduce_meteor(meteor_file)
    return out
 
 @app.route('/api/delete_meteor/<jsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def del_meteor(jsid):
    data = {}
    data['data'] = request.args.get('data')
@@ -137,6 +282,7 @@ def del_meteor(jsid):
    return out
 
 @app.route('/api/restore_meteor/<jsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def rest_meteor(jsid):
    data = {}
    data['data'] = request.args.get('data')
@@ -145,6 +291,7 @@ def rest_meteor(jsid):
 
 
 @app.route('/api/delete_meteors/', methods=['GET', 'POST'])
+@auth.login_required
 def del_meteors():
 
    data = {}
@@ -154,12 +301,14 @@ def del_meteors():
    return out
 
 @app.route('/cal/lensmodel/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def lens_mod(amsid):
    out = lens_model(amsid)
    return out
 
 
 @app.route('/cal/vars/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def op_vars(amsid):
    if request.method == "POST":
       data = request.form
@@ -169,28 +318,33 @@ def op_vars(amsid):
    return out
 
 @app.route('/cal/masks/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def masks(amsid):
    out = show_masks(amsid)
    return out
 
 @app.route('/edit_mask/<amsid>/<camid>/', methods=['GET', 'POST'])
+@auth.login_required
 def emasks(amsid,camid):
    out = edit_mask(amsid,camid)
    return out
 
 
 @app.route('/calfile/del/<amsid>/<calfile>/', methods=['GET', 'POST'])
+@auth.login_required
 def del_cfile(amsid, calfile):
    out = del_calfile(amsid, calfile)
    return out
 
 @app.route('/calfile/<amsid>/<calfile>/', methods=['GET', 'POST'])
+@auth.login_required
 def cfile(amsid, calfile):
    out = cal_file(amsid, calfile)
    return out
 
 
 @app.route('/calib/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def calib(amsid):
    req = {}
    req['cam_id_filter'] = request.args.get('cam_id_filter')
@@ -198,17 +352,20 @@ def calib(amsid):
    return out
 
 @app.route('/live/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def live(amsid):
    out = live_view(amsid)
    return out
 
 @app.route('/min_detail/<amsid>/<date>/<min_file>/', methods=['GET', 'POST'])
+@auth.login_required
 def min_detail(amsid, date, min_file):
    out = min_detail_main(amsid, date, min_file)
    return out
 
 
 @app.route('/stacks_hour/<amsid>/<date>/<hour>/', methods=['GET', 'POST'])
+@auth.login_required
 def stacks_day_hour(amsid, date, hour):
    #req = {}
    #req['hour'] = request.args.get('hour')
@@ -217,6 +374,7 @@ def stacks_day_hour(amsid, date, hour):
 
 
 @app.route('/stacks_day/<amsid>/<date>/', methods=['GET', 'POST'])
+@auth.login_required
 def stacks_day(amsid, date):
    req = {}
    req['hour'] = request.args.get('hour')
@@ -225,6 +383,7 @@ def stacks_day(amsid, date):
 
 
 @app.route('/stacks/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def stacks(amsid):
    req = {}
    start_day = request.args.get('start_day')
@@ -244,6 +403,7 @@ def stacks(amsid):
 
 
 @app.route('/meteors_by_day/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def meteors_bd(amsid ):
    req = {}
    out = meteors_by_day(amsid,req)
@@ -252,6 +412,7 @@ def meteors_bd(amsid ):
 
 # TRASH PAGE
 @app.route('/trash/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def trash_pg(amsid ):
    req = {}
    start_day = request.args.get('start_day')
@@ -262,8 +423,33 @@ def trash_pg(amsid ):
    out = trash_page(amsid, req)
    return(out)
 
+
+# REDIS MAIN
+@app.route('/rmeteor/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
+def rmeteors(amsid ):
+   req = {}
+   start_day = request.args.get('start_day')
+   end_day = request.args.get('end_day')
+   meteor_per_page = request.args.get('meteor_per_page')
+   sort_by = request.args.get('sort_by')
+   filterd = request.args.get('filter')
+   p = request.args.get('p')
+
+   req['start_day'] = start_day
+   req['end_day'] = end_day
+   req['meteor_per_page'] = meteor_per_page
+   req['p'] = p
+   req['sort_by'] = sort_by 
+   req['filter'] = filterd
+
+   out = meteors_main_redis(amsid,req, json_conf)
+
+   return(out)
+
 # MAIN METEOR PAGE
-@app.route('/meteors/<amsid>/', methods=['GET', 'POST'])
+@app.route('/meteor/<amsid>/', methods=['GET', 'POST'])
+@auth.login_required
 def meteors(amsid ):
    req = {}
    start_day = request.args.get('start_day')
@@ -284,6 +470,7 @@ def meteors(amsid ):
    return out
 
 @app.route('/goto/meteor/<meteor_file>/', methods=['GET', 'POST'])
+@auth.login_required
 def goto_meteor(meteor_file):
    json_conf = load_json_file("../conf/as6.json")
    amsid = json_conf['site']['ams_id']
@@ -291,12 +478,14 @@ def goto_meteor(meteor_file):
    out = detail_page(amsid, date, meteor_file )
    return out
 
-@app.route('/meteors/<amsid>/<date>/<meteor_file>/', methods=['GET', 'POST'])
+@app.route('/meteor/<amsid>/<date>/<meteor_file>/', methods=['GET', 'POST'])
+@auth.login_required
 def meteor_detail_page(amsid, date, meteor_file):
    out = detail_page(amsid, date, meteor_file )
    return out
 
 @app.route('/LEARNING/METEORS/<amsid>', methods=['GET', 'POST'])
+@auth.login_required
 def lrn_meteors(amsid):
    req = {}
    req['p'] = request.args.get('p')
@@ -305,9 +494,15 @@ def lrn_meteors(amsid):
    return out
 
 
+@app.route('/motion/<date>/', methods=['GET', 'POST'])
+@auth.login_required
+def cnt_motion(date):
+   out = motion_detects(date)
+   return(out)
 
 
 @app.route('/API/<cmd>', methods=['GET', 'POST'])
+@auth.login_required
 def main_api(cmd):
    if cmd == 'crop_video':
       sd_video_file = request.args.get('video_file')

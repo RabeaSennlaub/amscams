@@ -29,6 +29,94 @@ from matplotlib.figure import Figure
 from lib.DEFAULTS import *
 print(TL_IMAGE_DIR)
 
+def fast_au_report(date, json_conf):
+   html = ""
+   print("FAST AURORA REPORT")
+   plots = {}
+   au_dir = "/mnt/ams2/aurora/" + date + "/"
+   aujs = glob.glob(au_dir + "*_au.json")
+   dtf = 0
+   for af in sorted(aujs):
+      aj = load_json_file(af)
+      for mf in sorted(aj.keys()):
+         data = aj[mf]
+         (f_datetime, cam, f_date_str,fy,fm,fd, fh, fmin, fs) = convert_filename_to_date_cam(mf)
+         if cam not in plots:
+            plots[cam] = {}
+            plots[cam]['sel'] = []
+            plots[cam]['time'] = []
+            plots[cam]['perm'] = []
+            plots[cam]['area'] = []
+            plots[cam]['max_green'] = []
+           
+         sun_status, sun_az, sun_el = day_or_night(f_date_str, json_conf,1)
+         if int(sun_el) > -10:
+            continue
+         if data['detected'] == 1:
+            cap = "P:" + str(data['perm'])[0:6] + " A:" +  str(data['area']) + "RG:"  +  str(data['max_rg'])[0:3] + " BG:" + str(data['max_bg'])[0:3] + " SE:" + str(sun_el)
+
+            vmf = mf.replace("/mnt/ams2", "")
+            link = vmf.replace("/images", "")
+            link = link.replace("-stacked-tn.jpg", ".mp4")
+            html += "<div style='float: left'><a href=" + link + "><img src=" + vmf + "></a><br>" + cap + "</div>"
+            dtf += 1
+         if data['detected'] == 1:
+            plots[cam]['sel'].append(float(sun_el))
+            plots[cam]['time'].append(f_date_str)
+            plots[cam]['perm'].append(data['perm'])
+            plots[cam]['area'].append(data['area'])
+            plots[cam]['max_green'].append((data['max_rg'] + data['max_bg']/2))
+         else:
+            plots[cam]['sel'].append(float(sun_el))
+            plots[cam]['time'].append(f_date_str)
+            plots[cam]['perm'].append(0)
+            plots[cam]['area'].append(0)
+            print(data)
+            plots[cam]['max_green'].append(0)
+   fp = open(au_dir + "detects.html", "w")
+   header = """
+      <h1>Aurora Report for """ + str(date) + " " + str(dtf) + """ aurora detections</h1> 
+   """
+   fp.write(header)
+   fp.write(html)
+   save_json_file(au_dir + "plots.json", plots)
+   plot_aud(date, json_conf)
+
+def plot_aud(day, json_conf):
+   aud = "/mnt/ams2/aurora/" + day + "/" 
+   plots = load_json_file(aud + "plots.json")
+
+   for cam in plots:
+      fig = plt.figure()
+      print("plotting", cam)  
+      xdata = plots[cam]['sel']
+      ydata = plots[cam]['area']
+      #plt.xticks(np.arange(min(xdata), max(xdata), 5.0))
+      #ax.set_xticks(ax.get_xticks()[::2])
+      plt.plot(xdata,ydata)
+      plt.savefig(aud+ cam + "_au_area.png")
+      plt.clf()
+      print("SAVED:", aud + cam + "_au_area.png")
+
+def fast_aurora(date, cam, json_conf):
+   amsid = json_conf['site']['ams_id']
+   au_dir = "/mnt/ams2/aurora/" + date + "/"
+   if cfe(au_dir, 1) == 0:
+      os.makedirs(au_dir)
+   au_file = "/mnt/ams2/aurora/" + date + "/" + amsid + "_" + cam + "_au.json"
+   if cfe(au_file) == 1:
+      aud = load_json_file(au_file)
+   else:
+      aud = {}
+
+   files = glob.glob("/mnt/ams2/SD/proc2/" + date + "/images/*" + cam + "*tn.jpg")
+   print("/mnt/ams2/SD/proc2/" + date + "/images/*" + cam + "*tn.jpg")
+   for file in sorted(files):
+      if file not in aud:
+         aur, hist_img, img = detect_aurora(img_file=file)
+         aud[file] = aur
+      print(file, aud[file])
+   save_json_file(au_file, aud)
 
 def sunset_tl(date, json_conf):
    print("Sunset:", date)
@@ -191,6 +279,8 @@ def hourly_stacks_html(date, json_conf):
          cv2.imwrite(night_stack_file_jpg, night_stack_image)
          print(night_stack_file_jpg)
       except:
+         print(night_stack_file_jpg)
+         print(night_stack_file.shape)
          print("Problem saving night stack file ", night_stack_file)
          exit()
 
@@ -1470,11 +1560,17 @@ def gradient(image):
 
 def make_flat(cam,day,json_conf):
    print("Make flat:", cam, day)
+   
+   default = np.zeros((704,576,3),dtype=np.uint8)
    if cfe(MASK_DIR, 1) == 0:
       os.makedirs(MASK_DIR)
    mask_file = MASK_DIR + cam + "_mask.png"
    flat_file = MASK_DIR + cam + "_flat.png"
    latest_file = "/mnt/ams2/latest/" + cam + ".jpg"
+
+   print("SAVE:", MASK_DIR + cam + "_mask.png")
+   cv2.imwrite(MASK_DIR + cam + "_mask.png", default)
+
    if cfe(mask_file) == 0:
       applied_file = mask_file.replace("mask", "applied")
       late = cv2.imread(latest_file)

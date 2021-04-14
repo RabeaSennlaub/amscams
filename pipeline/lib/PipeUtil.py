@@ -13,7 +13,7 @@ import cv2
 #from PIL import ImageFont, ImageDraw, Image, ImageChops
 import numpy as np
 import ephem
-import json
+import simplejson as json
 import glob
 
 
@@ -194,7 +194,7 @@ def save_json_file(json_file, json_data, compress=False):
             json_data['cp'][key] = json_data['cp'][key].tolist()
    with open(json_file, 'w') as outfile:
       if(compress==False):
-         json.dump(json_data, outfile, indent=4, allow_nan=True)
+         json.dump(json_data, outfile, indent=4, allow_nan=True )
       else:
          json.dump(json_data, outfile, allow_nan=True)
    outfile.close()
@@ -379,4 +379,22 @@ def get_trim_num(file):
    at = at.replace(".png", "")
    return(at)
 
+def fn_dir(file):
+   fn = file.split("/")[-1]
+   dir = file.replace(fn, "")
+   return(fn, dir)
 
+def load_mask_imgs(json_conf):
+   mask_files = glob.glob("/mnt/ams2/meteor_archive/" + json_conf['site']['ams_id'] + "/CAL/MASKS/*mask*.png" )
+   mask_imgs = {}
+   sd_mask_imgs = {}
+   for mf in mask_files:
+      mi = cv2.imread(mf, 0)
+      omh, omw = mi.shape[:2]
+      fn,dir = fn_dir(mf)
+      fn = fn.replace("_mask.png", "")
+      mi = cv2.resize(mi, (1920, 1080))
+      sd = cv2.resize(mi, (omw, omh))
+      mask_imgs[fn] = mi
+      sd_mask_imgs[fn] = sd
+   return(mask_imgs, sd_mask_imgs)

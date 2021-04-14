@@ -42,8 +42,16 @@ def remake_learning_index():
                      ldb[lfn]['hs'] = mj['best_meteor']['ohs']
                      ldb[lfn]['oint'] = mj['best_meteor']['oint']
                      ldb[lfn] = get_crop_info(mjv, ldb[lfn])
-                     print("NEW DATA:", ldb[lfn]) 
-                     exit()
+                     if SHOW == 1:
+                        stack_file = mjv.replace(".mp4", "-stacked.jpg")
+                        print("NEW DATA:", ldb[lfn]) 
+                        img = cv2.imread(stack_file)
+                        img = cv2.resize(img, (640,360))
+                        cx1,cy1,cx2,cy2 = ldb[lfn]['crop_360']
+                        cv2.rectangle(img, (cx1, cy1), (cx2,cy2), (255, 255, 255), 1)
+                        #cv2.imshow('pepe',img)
+                        #cv2.waitKey(30)
+   save_json_file(L_DIR + "meteors.json", ldb)
      
    
 def get_crop_info(vid, ldb_row):
@@ -77,6 +85,26 @@ def get_crop_info(vid, ldb_row):
    cx2 = int(cx + (bw/2))
    cy1 = int(cy - (bh/2))
    cy2 = int(cy + (bh/2))
+
+   # fix crop if it is out of bounds
+   print("BEFORE CX:", cx1,cy1,cx2,cy2)
+   if cx1 <= 0:
+      cw = cx2 - cx1
+      cx1 = 0 
+      cx2 = cx1 + cw
+   if cy1 <= 0:
+      ch = cy2 - cy1
+      cy1 = 0 
+      cy2 = cy1 + ch
+   if cx2 >= 640:
+      cw = cx2 - cx1
+      cx1 = 640 - cw
+      cx2 = cx1 + cw
+   if cy2 >= 360:
+      ch = cy2 - cy1
+      cy1 = 360 - ch
+      cy2 = cy1 + ch
+
    ldb_row['crop_360'] = [cx1,cy1,cx2,cy2]
    ldb_row['crop_dim'] = [bw,bh]
    return(ldb_row) 
@@ -261,8 +289,13 @@ def add_meteor_to_ldb(js, ldb, force=0):
                      cv2.waitKey(30)
                if make_cs == 1:
                   frames = load_frames_simple(crop_file)
-                  stack_img = stack_frames(frames, skip = 1, resize=None, sun_status="day")
-                  cv2.imwrite(crop_stack, stack_img)
+                  stack_img = stack_frames(frames, 1, None, "day")
+                  print("FRAMES:", len(frames))
+                  if stack_img is not None: 
+                     cv2.imwrite(crop_stack, stack_img)
+                  else:
+                     print("failed to add, stack img bad.")
+                     return() 
                   print("Saved stack crop:", crop_stack)
                   if SHOW == 1:
                      cv2.imshow('pepe', stack_img)

@@ -8,7 +8,7 @@ from lib.PipeUtil import load_json_file, save_json_file, cfe
 from lib.PipeAutoCal import fn_dir
 
 def stacks_main(amsid, data) :
-
+   remote = 1
    json_file = "/mnt/ams2/SD/proc2/json/" + "main-index.json"
    if cfe("/mnt/ams2/meteors", 1) == 0:
       return("Problem: data drive is not mounted. ")
@@ -46,8 +46,12 @@ def stacks_main(amsid, data) :
       end_ind = len(sdirs)
 
 
-   header = get_template("FlaskTemplates/header.html")
-   footer = get_template("FlaskTemplates/footer.html")
+   if remote == 1:
+      footer = get_template("FlaskTemplates/footer-remote.html")
+      header = get_template("FlaskTemplates/header-remote.html")
+   else:
+      header = get_template("FlaskTemplates/header.html")
+      footer = get_template("FlaskTemplates/footer.html")
    nav = get_template("FlaskTemplates/nav.html")
    template = get_template("FlaskTemplates/super_stacks_main.html")
    json_conf = load_json_file("../conf/as6.json")
@@ -67,7 +71,7 @@ def stacks_main(amsid, data) :
          out += """
          <div class='h2_holder d-flex justify-content-between'>
 	       <h2>""" + dsp_date + """ 
-               - <a class='btn btn-primary' href=/meteors/""" + amsid + "/?start_day=" + date + ">" + str(mets) + """ Meteors </a>
+               - <a class='btn btn-primary' href=/meteor/""" + amsid + "/?start_day=" + date + ">" + str(mets) + """ Meteors </a>
 	      </h2><p><a href=/trash/""" + amsid + "/?start_day=" + date + """>""" + str(non_meteors) + """ Non-Meteors </a>  </a>
          </div>
          <div class='gallery gal-resize row text-center text-lg-left mb-5'>

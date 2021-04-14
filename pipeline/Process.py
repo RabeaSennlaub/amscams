@@ -5,29 +5,33 @@ import numpy as np
 import sys
 import time
 from PIL import ImageFont, ImageDraw, Image, ImageChops
-from lib.PipeProcess import run_jobs, update_code
+from lib.PipeProcess import run_jobs 
 from datetime import datetime
 import datetime as dt
 
+
+from lib.Remaster import make_event_video, remaster_day, sync_final_day, remaster_month, reduce_remote_meteor
 from lib.PipeCustomVideos import  meteors_last_night_for_cam, hd_snaps, assemble_custom, simple_TL, join_two
-from lib.PipeMeteorClean import purge_meteors_for_date, fix_meteor_orphans, meteor_png_to_jpg, fix_meteor_month, restack_meteor_dir, convert_meteor_pngs_to_jpgs
-from lib.PipeWeather import detect_clouds , make_flat, track_clouds, solar_info, audit_tl, detect_aurora, batch_aurora, aurora_report, aurora_stack_vid, tl_list, aurora_tl,  hourly_stacks, make_all_hourly_stacks, hourly_stacks_html, meteor_night_stacks
+from lib.PipeMeteorClean import purge_meteors_for_date, fix_meteor_orphans, meteor_png_to_jpg, fix_meteor_month, restack_meteor_dir, convert_meteor_pngs_to_jpgs, compress_hour_images
+from lib.PipeWeather import detect_clouds , make_flat, track_clouds, solar_info, audit_tl, detect_aurora, batch_aurora, aurora_report, aurora_stack_vid, tl_list, aurora_tl,  hourly_stacks, make_all_hourly_stacks, hourly_stacks_html, meteor_night_stacks, fast_aurora, fast_au_report, plot_aud
 from lib.PipeImage import quick_video_stack, restack_meteor
 from lib.PipeTrans import trans_test 
 from lib.PipeManager import mln_report, mln_best, best_of , copy_super_stacks, super_stacks_to_video, multi_station_meteors, proc_status, station_list
 from lib.PipeFiles import get_pending_files
 from lib.PipeUtil import convert_filename_to_date_cam, day_or_night , load_json_file, save_json_file, cfe, remove_corrupt_files
 from lib.PipeVideo import scan_stack_file, make_preview_videos, load_frames_simple, ffmpeg_cat , ffmpeg_cats, ffmpeg_splice
-from lib.PipeDetect import detect_in_vals , obj_report, trim_events, detect_all, get_trim_num, trim_min_file, detect_meteor_in_clip, analyze_object, refine_meteor, refine_all_meteors, fireball, verify_meteor, re_detect, reduce_meteor, reject_meteors, confirm_meteors, make_roi_video_mfd, make_meteor_index_day, make_meteor_index_all,apply_frame_deletes, reduce_in_crop, batch_reduce, check_for_trailing_frames, remake_mfd, remake_mfd_all, reject_hotspots, reject_mask_detects, perfect_points, perfect_points_all
+from lib.PipeDetect import detect_in_vals , obj_report, trim_events, detect_all, get_trim_num, trim_min_file, detect_meteor_in_clip, analyze_object, refine_meteor, refine_all_meteors, fireball, verify_meteor, re_detect, reduce_meteor, reject_meteors, confirm_meteors, make_roi_video_mfd, make_meteor_index_day, make_meteor_index_all,apply_frame_deletes, reduce_in_crop, batch_reduce, check_for_trailing_frames, remake_mfd, remake_mfd_all, reject_hotspots, reject_mask_detects, perfect_points, perfect_points_all, reject_planes
 
 from lib.PipeSync import sync_day , sync_index_day, sync_meteor_preview, sync_meteor_preview_all, do_meteor_day_prep, prep_month
-from lib.PipeAutoCal import autocal , solve_field, cal_all, draw_star_image, freecal_copy, apply_calib_old, index_failed, deep_calib, deep_cal_report, blind_solve_meteors, guess_cal, flatten_image, project_many, project_snaps, review_cals, star_db_mag, cal_report, review_all_cals, reverse_map, cal_index, sync_back_admin_cals, min_fov, fn_dir, refit_fov, refit_all, super_cal, check_all, refit_meteor, refit_meteors, reapply_meteor_cal, cal_manager, heal_cal, heal_all, resolve_failed, cal_status
+from lib.PipeAutoCal import autocal , solve_field, cal_all, draw_star_image, freecal_copy, apply_calib_old, index_failed, deep_calib, deep_cal_report, blind_solve_meteors, guess_cal, flatten_image, project_many, project_snaps, review_cals, star_db_mag, cal_report, review_all_cals, reverse_map, cal_index, sync_back_admin_cals, min_fov, fn_dir, refit_fov, refit_all, super_cal, check_all, refit_meteor, refit_meteors, reapply_meteor_cal, cal_manager, heal_cal, heal_all, resolve_failed, cal_status, get_default_calib_hist, get_calib_from_range, run_cal_defaults
 from lib.PipeReport import autocal_report, detect_report 
 from lib.PipeLIVE import meteor_min_files, broadcast_live_meteors, broadcast_minutes, meteors_last_night, mln_final, pip_video, mln_sync, super_stacks, meteor_index, fix_missing_images, fflist, resize_video, minify_file, make_preview_meteor, make_preview_meteors, sync_preview_meteors
 from lib.PipeTimeLapse import make_tl_for_cam, video_from_images, six_cam_video, timelapse_all, tn_tl6, sync_tl_vids, multi_cam_tl, audit_min, purge_tl , plot_min_int, aurora_fast
 from lib.PipeMeteorDelete import delete_all_meteor_files
-from lib.PipeEvent import events_for_day, get_network_info, solve_day
+from lib.PipeEvent import events_for_day, get_network_info, solve_day, dyna_events_for_day, dyna_events_for_month, delete_events_day 
+from lib.PipeSolve import simple_solve
 
+#from RMS.GreatCircle import fitGC
 
 '''
 
@@ -488,6 +492,8 @@ if __name__ == "__main__":
                reject_hotspots(fn, json_conf)
       else:
          reject_hotspots(sys.argv[2], json_conf)
+   if cmd == 'reject_planes':
+      reject_planes(sys.argv[2], json_conf)
    if cmd == 'reject_masks':
       if sys.argv[2] == "all":
          files = sorted(glob.glob("/mnt/ams2/meteors/*"), reverse=True)
@@ -497,6 +503,8 @@ if __name__ == "__main__":
                fn, fdir = fn_dir(file)
                print(fn)
                reject_mask_detects(fn, json_conf)
+               reject_mask_detects(fn, json_conf)
+               reject_planes(fn, json_conf)
             else:
                print("NO FILE:", file)
       else:
@@ -545,7 +553,11 @@ if __name__ == "__main__":
          phase = 1
       do_meteor_day_prep(sys.argv[2], json_conf, phase)
    if cmd == "prep_month" :
-      prep_month(sys.argv[2], json_conf)
+      if len(sys.argv) == 4:
+         print("PHASE ON")
+         prep_month(sys.argv[2], json_conf, sys.argv[3])
+      else:
+         prep_month(sys.argv[2], json_conf)
    if cmd == "solve_day" :
       solve_day(sys.argv[2], json_conf)
    if cmd == "simple_tl" :
@@ -568,3 +580,68 @@ if __name__ == "__main__":
       cal_status(json_conf)
    if cmd == "station_list" :
       station_list()
+   if cmd == "default_cal" :
+      get_default_calib_hist(sys.argv[2], sys.argv[3], json_conf)
+   if cmd == "simple_solve" :
+      # meteor file
+      mf = sys.argv[2]
+      fn = mf.split("/")[-1]
+      day = fn[0:10] 
+      mj = load_json_file(mf)
+      if "multi_station_event" in mj:
+         # day event_id
+         event_id = mj['multi_station_event']['event_id']
+         print("SOLVE:", day, event_id) 
+         solutions = simple_solve(day, event_id, json_conf)
+         mj['solutions'] = solutions
+         save_json_file(mf, mj)
+         print("Saved:", mf)
+      else: 
+         print("No MSE in mj")
+   if cmd == "ded" :
+      dyna_events_for_day(sys.argv[2], json_conf)
+   if cmd == "dem" :
+      dyna_events_for_month(sys.argv[2], json_conf)
+
+   if cmd == "gc":
+      mf = sys.argv[2]
+      mfr = mf.replace(".json", "-reduced.json")
+      mjr = load_json_file(mfr)
+      mj = load_json_file(mf)
+      meteor_frame_data = mjr['meteor_frame_data']
+      cp = mj['cp']
+      if "loc" not in cp:
+         loc = [json_conf['site']['device_lat'],json_conf['site']['device_lng'],json_conf['site']['device_alt']]
+      cp['loc'] = loc
+      #fitGC(meteor_frame_data, cp)
+
+   if cmd == "get_def_cal" or cmd == "gdc":
+      get_calib_from_range(sys.argv[2], sys.argv[3], json_conf)
+   if cmd == "fastaur" :
+      fast_au_report(sys.argv[2],  json_conf)
+   if cmd == "delete_events_day" :
+      delete_events_day(sys.argv[2],json_conf )
+   if cmd == "plot_aud" :
+      plot_aud(sys.argv[2],  json_conf)
+   if cmd == "make_event_video" or cmd == 'mev' :
+      make_event_video(sys.argv[2],  json_conf)
+   if cmd == "remaster_day" or cmd == 'rmd' :
+      remaster_day(sys.argv[2],  json_conf)
+   if cmd == "sync_final_day" or cmd == 'sfd' :
+      sync_final_day(sys.argv[2],  json_conf)
+   if cmd == "remaster_month" :
+      remaster_month(sys.argv[2],  json_conf)
+   if cmd == "chi" :
+      compress_hour_images(sys.argv[2],  json_conf)
+   if cmd == "rmm" :
+      reduce_remote_meteor(sys.argv[2], sys.argv[3], json_conf)
+   if cmd == "cal_defaults" :
+      run_cal_defaults(json_conf)
+
+   if cmd == "fastau" :
+      if sys.argv[3] == 'all':
+         for cam in json_conf['cameras']:
+            cams_id = json_conf['cameras'][cam]['cams_id']
+            fast_aurora(sys.argv[2], cams_id, json_conf)
+      else:
+         fast_aurora(sys.argv[2], sys.argv[3], json_conf)

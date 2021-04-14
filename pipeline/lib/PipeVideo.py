@@ -18,12 +18,12 @@ from lib.PipeMeteorTests import ang_dist_vel, angularSeparation
 
 def ffmpeg_cats(files, outfile=None):
    print("FILES:", files)
-   files = sorted(files[2:])
+   #files = sorted(files[2:])
    list = ""
    for file in files:
       list += "file '" + file + "'\n"
    list_file = "tmp_vids/cat.txt"
-   outfile = files[2].replace(".mp4", "") 
+   outfile = files[0].replace(".mp4", "") 
    last_fn, ld = fn_dir(files[-1])
    outfile = outfile + "__" + last_fn
    fp = open(list_file, "w")
@@ -528,6 +528,9 @@ def load_frames_fast(trim_file, json_conf, limit=0, mask=0,crop=(),color=0,resiz
             else:
                go = 0
          else:
+            if mask_img is None:
+               mask_img = np.zeros((frame.shape[0] ,frame.shape[1]),dtype=np.uint8)
+
             if color == 1:
                if sun_status == "day" and frame_count % 25 == 0:
                   color_frames.append(frame)

@@ -177,7 +177,7 @@ def meteors_by_day(amsid, in_data):
          out += "<div style='float:left'>"
       vs = stack_file.replace("/mnt/ams2", "")
       vs = vs.replace(".jpg", "-tn.jpg")
-      out += "<a href=/meteors/" + amsid + "/?start_day=" + day + "><img src=" +  vs + "></a>\n"
+      out += "<a href=/meteor/" + amsid + "/?start_day=" + day + "><img src=" +  vs + "></a>\n"
       last_day = day
    out += "</div></div>"
    return(out)
@@ -263,7 +263,10 @@ def meteors_main (amsid, in_data) :
    json_conf = load_json_file("../conf/as6.json")
    delete_log = "/mnt/ams2/SD/proc2/json/" + amsid + ".del"
    if cfe(delete_log) == 1:
-      del_data = load_json_file(delete_log)
+      try:
+         del_data = load_json_file(delete_log)
+      except:
+         del_data = {}
    else:
       del_data = {}
 
@@ -324,7 +327,7 @@ def meteors_main (amsid, in_data) :
          if msm == 1:
             msc += 1
    if msc > 0:
-       link = "<a href='/meteors/" + amsid + "/?start_day=" + start_day + "&filter=multi'>"
+       link = "<a href='/meteor/" + amsid + "/?start_day=" + start_day + "&filter=multi'>"
        filter_display += "<span style='margin: 25px'>" + link + str(msc) + " multi-station meteors detected</a></span>"
 
 
@@ -420,7 +423,7 @@ def meteors_main (amsid, in_data) :
      
       jsid = div_id.replace("_", "")
       vfn = fn.replace("-stacked-tn.jpg", ".mp4")
-      meteor_detail_link = "/meteors/" + amsid + "/" + mdate + "/" + vfn + "/"
+      meteor_detail_link = "/meteor/" + amsid + "/" + mdate + "/" + vfn + "/"
       if reduced == 1:
          ht_class = "reduced"
       else:
@@ -459,7 +462,7 @@ def meteors_main (amsid, in_data) :
    if "/" in start_day:
       start_day = start_day.replace("/", "_")
       end_day = end_day.replace("/", "_")
-   pagination = get_pagination(page, len(sorted_meteors), "/meteors/" + amsid + "/?meteor_per_page=" + str(meteor_per_page) + "&start_day=" + start_day + "&end_day=" + end_day, meteor_per_page )
+   pagination = get_pagination(page, len(sorted_meteors), "/meteor/" + amsid + "/?meteor_per_page=" + str(meteor_per_page) + "&start_day=" + start_day + "&end_day=" + end_day, meteor_per_page )
    out += "</div><!--main container!--> <div class='page_h'><!--Page  " + format(page) + "/" +  format(pagination[2]) + "--></div></div> <!-- ADD EXTRA FOR ENDING MAIN PROPERLY. --> <div>"
    out += pagination[0]
 

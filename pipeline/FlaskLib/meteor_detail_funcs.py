@@ -6,6 +6,148 @@ import time
 import cv2
 import os
 import numpy as np
+import glob
+
+def pick_points_day(day, json_conf):
+   print("PPD")
+   xfiles = glob.glob("/mnt/ams2/meteors/" + day + "/*.json")
+   print("/mnt/ams2/meteors/" + day + "/*.json")
+   files = []
+   for file in xfiles:
+      print(file)
+      if "reduced" not in file:
+         files.append(file)
+   out = ""
+   for file in files:
+      mf = file.split("/")[-1]
+      print(file)
+      mj = load_json_file(file)
+      if "final_vid" in mj:
+         vf = mj['final_vid']
+      vf = vf.replace("/mnt/ams2", "")
+      icf = vf.replace(".mp4", "_crop.jpg")
+      mfile = json_conf['site']['ams_id'] + ":" + mf
+      link = "/pick_points/" + mfile + "/" 
+      href = "<a href=" + link + ">"
+      out += href + "<img width=320 height=180 src='" + icf + "?123'></a>"
+   return(out)
+
+def pick_points(meteor_id, json_conf):
+
+   points = []
+   out = ""
+   station_id, meteor_video = meteor_id.split(":")
+   mf = meteor_video.replace(".mp4", ".json")
+   year = mf[0:4] 
+   date = mf[0:10]
+   meteor_file = "/mnt/ams2/meteors/" + date + "/" + mf 
+   red_file = meteor_file.replace(".json", "-reduced.json")
+   if cfe(red_file) == 1:
+      mjr = load_json_file(meteor_file)
+   mj = load_json_file(meteor_file)
+   if "final_vid" in mj:
+      fvid = mj['final_vid']
+      fv_fn = fvid.split("/")[-1]
+      fv_fn = fv_fn.replace(".mp4", "")
+      cache_dir = "/mnt/ams2/CACHE/" + year + "/" + fv_fn + "_crop/"
+   if "final_vid" in mj:
+      roi_big = mj['final_vid'].replace(".mp4", "_crop.jpg")
+      crop_stack_file = mj['final_vid'].replace(".mp4", "_crop.jpg")
+      stack_file = mj['final_vid'].replace(".mp4", "_stacked.jpg")
+      vroi = roi_big.replace("/mnt/ams2", "")
+   if "hd_red" in mj:
+      if "hd_mfd" in mj['hd_red']:
+         for key in mj['hd_red']['hd_mfd']:
+            data = mj['hd_red']['hd_mfd'][key]
+            points.append((data['hd_lx'], data['hd_ly']))
+            print(data)
+   else:
+      print(mj)
+   out += crop_stack_file + "<br>" 
+   out += stack_file + "<br>" 
+   out += "<img width=1280 height=720 src=" + vroi + ">"
+
+   print("CACHE:", cache_dir)
+   files = glob.glob(cache_dir + "*")
+
+
+   out += """
+
+      <script src="https://archive.allsky.tv/APPS/src/js/plugins/fabric.js?1613429206.2923284"></script>
+
+      <canvas id="c" width=1920 height=1080 style="border:1px solid #ccc"></canvas>
+
+      <script> 
+      var crop_stack_file = "{:s}"
+      var stack_file = "{:s}"
+      var images = {:s}
+      var points = {:s}
+      ii = 0
+   """.format(crop_stack_file, stack_file, str(files), str(points))
+
+   out += """
+
+      var canvas = new fabric.Canvas("c", {
+         hoverCursor: 'pointer',
+         selection: true,
+         selectionBorderColor: 'green',
+         backgroundColor: null
+      });
+
+
+      for (i in points) {
+         var x = points[i][0]
+         var y = points[i][1]
+         console.log(x,y)
+         canvas.add(new fabric.Line([x, y, x+100, y+100], {
+            left: x,
+            top: y,
+            stroke: 'red'
+         }));
+      }
+
+
+      function set_image() {
+         imageUrl = images[ii]
+         canvas.setBackgroundImage(imageUrl, canvas.renderAll.bind(canvas), {
+         // Optionally add an opacity lvl to the image
+         backgroundImageOpacity: 0.5,
+         // should the image be resized to fit the container?
+         backgroundImageStretch: false
+         });
+      }
+
+      function next_img() {
+         ii = ii + 1
+         if (ii >= images.length) {
+            ii = 0
+         }
+         imageUrl = images[ii]
+         set_image()
+         document.getElementById("frame_num").innerHTML=ii
+      }
+   
+      function prev_img() {
+         ii = ii - 1
+         if (ii < 0) {
+            ii = 0
+         }
+         imageUrl = images[ii]
+         set_image()
+         document.getElementById("frame_num").innerHTML=ii
+      }
+
+
+      set_image()
+
+      </script>
+      <span id="frame_num">#</span>
+      <a href="javascript:prev_img()">Prev</a> - 
+      <a href="javascript:next_img()">Next</a> - 
+
+   """
+
+   return(out)
 
 def make_obs_object(mj,mse, nsinfo):
    obs = {}
@@ -18,9 +160,12 @@ def make_obs_object(mj,mse, nsinfo):
          obs[station] = {}
       if fn not in obs[station]:
          print("STATION:", station)
-         print("STATION:", nsinfo[station])
+         
          obs[station][fn] = {}
-         obs[station][fn]['loc'] = nsinfo[station]['loc']
+         if station in nsinfo:
+            obs[station][fn]['loc'] = nsinfo[station]['loc']
+         else:
+            obs[station][fn]['loc'] = [0,0,0]
          obs[station][fn]['times'] = []
          obs[station][fn]['fns'] = []
          obs[station][fn]['xs'] = []
@@ -30,7 +175,11 @@ def make_obs_object(mj,mse, nsinfo):
          obs[station][fn]['ras'] = []
          obs[station][fn]['decs'] = []
          obs[station][fn]['ints'] = []
-      mfd = mse['mfds'][i]
+    
+      if "mfds" in mse:
+         mfd = mse['mfds'][i]
+      else:
+         mfd = {}
       if "meteor_frame_data" in mfd:
          for mc in range(0, len(mfd['meteor_frame_data'])):
             data = mfd['meteor_frame_data'][mc]
@@ -54,6 +203,25 @@ def make_obs_object(mj,mse, nsinfo):
 
 def make_ms_html(amsid, meteor_file, mj):
    mse = mj['multi_station_event']
+
+
+   print("MSE:", mse)
+
+   if "event_file" in mse:
+      if "http:" in mse['event_file']:
+         mse['event_file'] = mse['event_file'].replace("http:", "https:")
+      ms_html = "<iframe width=100% height=800 src=" + mse['event_file'] + "></iframe>"
+      print(ms_html)
+      return(ms_html)
+
+   failed = 0
+   if "solve_status" in mse:
+      solve_status = mse['solve_status']
+      if "FAILED" in mse['solve_status']:
+         failed = 1
+   else:
+      solve_status = "NOT SOLVED"
+
    #ms_html = "<table width=100%>"
    #ms_html += "<tr><td>Station</td><td>Start Datetime</td><td>File</td></tr>"
    if cfe("../conf/network_station_info.json") == 0:
@@ -64,7 +232,37 @@ def make_ms_html(amsid, meteor_file, mj):
 
    station_pts = ""
 
-   ms_html = """
+   if failed == 1:
+      note = "This event failed."
+   else:
+      note = ""
+
+  
+
+   note = solve_status
+   ms_html = ""
+   if solve_status == "SUCCESS":
+      event_day = mse['event_day']
+      y,m,d = event_day.split("_")
+      event_dir = "/mnt/archive.allsky.tv/EVENTS/" + y + "/" + m + "/" + d + "/" + mse['event_id'] + "/"
+      event_url = event_dir.replace("/mnt/", "https://")
+      event_link = event_url + "index.html"
+      mse['event_link'] = event_link
+      event_href = "<a target=_blank href=" + event_link + ">Event " + mse['event_id'] + " Solved</a>" 
+      ms_html += """
+         <div class='h1_holder  d-flex justify-content-between'>
+            <h1><span class='h'>""" + event_href + """</span> </h1>
+         </div>
+      """
+   else:
+      ms_html += """
+         <div class='h1_holder  d-flex justify-content-between'>
+            <h1><span class='h'>""" + str(solve_status) + """</span> </h1>
+         </div>
+      """
+
+
+   ms_html += """
       <div class='h1_holder  d-flex justify-content-between'>
          <h1><span class='h'>Captures</span> </h1>
       </div>
@@ -81,7 +279,10 @@ def make_ms_html(amsid, meteor_file, mj):
       file = file.replace(".json", "")
       tstation = mse['stations'][i]
       active_stations[tstation] = 1
-      mfd = mse['mfds'][i]
+      if "mfds" in mse:
+         mfd = mse['mfds'][i]
+      else:
+         mfd = {}
       if "meteor_frame_data" not in mfd:
          meteor_frame_data = None
       else:
@@ -99,6 +300,10 @@ def make_ms_html(amsid, meteor_file, mj):
          cloud_url = "https://archive.allsky.tv/" + tstation + "/METEORS/" + year + "/" + day + "/" 
       cloud_prev = cloud_dir + tstation + "_" + file + "-prev.jpg"
       cloud_prev_url = cloud_url + tstation + "_" + file + "-prev.jpg?xx"
+      if ".mp4" in cloud_prev:
+         cloud_prev = cloud_prev.replace(".mp4", "")
+         cloud_prev_url = cloud_prev_url.replace(".mp4", "")
+         
       prev_img = "<img src=" + cloud_prev_url + ">"      
       #ms_html += "<tr><td>" + mse['stations'][i] + "</td><td>" + mse['start_datetime'][i] + "</td><td>" + prev_img + "<br>" + file + "</td></tr>"
       ht_class = "norm"
@@ -134,25 +339,51 @@ def make_ms_html(amsid, meteor_file, mj):
       """
       ms_html += "</div>"
 
+
+   ms_html += "</div>"
+
+   if solve_status == "SUCCESS":
+      ms_html += """
+         <div class='h1_holder  d-flex justify-content-between'>
+            <h1><span class='h'>Solution</span> </h1>
+         </div>
+      """
+      ms_html += solve_report(mse)
+
+
+   ms_html += "</div>"
+   return(ms_html)
+
+   all_lats = []
+   all_lons = []
+
    for station in active_stations:
       if station_pts != "":
          station_pts += ";"
       loc = nsinfo[station]['loc']
       station_pts += str(loc[0]) + "," + str(loc[1]) + "," + station
+      all_lats.append(float(loc[0]))
+      all_lons.append(float(loc[1]))
    fn,dir = fn_dir(meteor_file)
    date = fn[0:10]
    fn = fn.replace(".mp4", "-map.jpg?" + str(time.time()))
-   station_map = "/meteors/" + date + "/" + fn
+   station_map = "/meteor/" + date + "/" + fn
+   kml_file = station_map.replace("-map.jpg", ".kml")
    print("MAP:", station_map)
    ms_html += "</div></div>"
    #if cfe(station_map) == 1:
+
+   center_lat = np.mean(all_lats)
+   center_lon = np.mean(all_lons)
+
    if True:
       ms_html += """
          <div class='h1_holder  d-flex justify-content-between'>
             <h1><span class='h'>Map</span> </h1>
          </div>
    """
-      ms_html += "<img src=" + station_map+ "><br>"
+      #ms_html += "<img src=" + station_map+ "><br>"
+      ms_html += "<iframe src=\"https://archive.allsky.tv/dist/maps/index.html?mf=" + kml_file + "&lat=" + str(center_lat) + "&lon=" + str(center_lon) + "\" width=800 height=440></iframe><br><a href=" + kml_file + ">KML</a>"
    ms_html += """
             <div class="tab-content box " >
 
@@ -169,15 +400,25 @@ def make_ms_html(amsid, meteor_file, mj):
    """
    if "solutions" in mj:
       
-      for skey, sol in mj['solutions']:
-         print(skey,sol)
-         slon,slat,salt,elon,elat,ealt,dist,dur,vel = sol
+      for sdata in mj['solutions']:
+         if len(sdata) == 2:
+            (skey,sol) = sdata
+            slon,slat,salt,elon,elat,ealt,dist,dur,vel = sol
+         else:
+            skey, slon,slat,salt,elon,elat,ealt,dist,dur,vel = sdata
          #saz,sel,salt,eaz,eel,ealt,dist,dur,vel = sol
          ms_html += "<tr><td>" + skey + "</td><td>TIME</td><td>" + str(slat)[0:5] + "</td><td>" + str(slon)[0:5] + "</td><td>" + str(salt/1000)[0:5] + "</td><td>" + str(elat)[0:5] + "</td><td>" + str(elon)[0:5] + "</td><td>" + str(ealt/1000)[0:5] + "</td><td>" + str(dist)[0:5] + "</td><td>" + str(dur)[0:5] + "</td><td>" + str(vel)[0:5] + "</td></tr>"
    ms_html += "</table></div></div>"
    return(ms_html)
 
+def solve_report(mse):
+   out = ""
+   out += """<iframe width=100% height=800 src='""" + mse['event_link'] + """'></iframe>"""
+   return(out)
+
+
 def detail_page(amsid, date, meteor_file):
+   remote = 1
    MEDIA_HOST = request.host_url.replace("5000", "80")
    MEDIA_HOST = ""
    METEOR_DIR = "/mnt/ams2/meteors/"
@@ -212,7 +453,7 @@ def detail_page(amsid, date, meteor_file):
    if "multi_station_event" in mj:
       otherobs = """
                 <li class="nav-item">
-                    <a class="nav-link" id="multi-tab-l" data-toggle="tab" href="#multi-tab" role="tab" aria-controls="multi" aria-selected="false"><span id="str_cnt"></span>Other Observations</a>
+                    <a class="nav-link" id="multi-tab-l" data-toggle="tab" href="#multi-tab" role="tab" aria-controls="multi" aria-selected="false"><span id="str_cnt"></span>Event Solution</a>
                 </li>
       """
       ms_html = str(mj['multi_station_event'])
@@ -235,8 +476,12 @@ def detail_page(amsid, date, meteor_file):
          print("NO SD ", sd_stack)
  
    az_grid = ""
-   header = get_template("FlaskTemplates/header.html")
-   footer = get_template("FlaskTemplates/footer.html")
+   if remote == 1:
+      header = get_template("FlaskTemplates/header-remote.html")
+      footer = get_template("FlaskTemplates/footer-remote.html")
+   else:
+      header = get_template("FlaskTemplates/header.html")
+      footer = get_template("FlaskTemplates/footer.html")
    nav = get_template("FlaskTemplates/nav.html")
    template = get_template("FlaskTemplates/meteor_detail.html")
 
@@ -332,7 +577,10 @@ def detail_page(amsid, date, meteor_file):
             template = template.replace("{CAT_STARS}", "")
          if "total_res_px" in cp:
             template = template.replace("{RES_PX}", str(cp['total_res_px'])[0:5])
-            template = template.replace("{RES_DEG}", str(cp['total_res_deg'])[0:5])
+            if "total_res_deg" in cp:
+               template = template.replace("{RES_DEG}", str(cp['total_res_deg'])[0:5])
+            else:
+               template = template.replace("{RES_DEG}", "")
          else:
             template = template.replace("{RES_PX}", "")
             template = template.replace("{RES_DEG}", "")
